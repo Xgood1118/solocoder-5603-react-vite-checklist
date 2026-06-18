@@ -5,6 +5,7 @@ import { useTemplateStore } from '../stores/templateStore';
 import { createChecklistFromTemplate } from '../utils/template';
 import { calculateChecklistProgress, getStatusLabel, getStatusColorClass } from '../utils/status';
 import { ProgressBar } from '../components/ProgressBar';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 
@@ -50,7 +51,8 @@ export function Home() {
           <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
             我的清单
           </h2>
-          <div className="flex space-x-3">
+          <div className="flex space-x-3 items-center">
+            <ThemeToggle />
             <Link
               to="/templates"
               className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 

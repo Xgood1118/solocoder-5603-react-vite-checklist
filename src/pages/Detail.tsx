@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useChecklistStore } from '../stores/checklistStore';
 import { useTemplateStore } from '../stores/templateStore';
@@ -11,6 +11,7 @@ import {
   getStatusColorClass,
   getIncompleteMandatoryItems,
   checkDependenciesMet,
+  detectCircularDependencies,
 } from '../utils/status';
 import { createTemplateFromChecklist } from '../utils/template';
 import { downloadMarkdown, printReport } from '../utils/export';
@@ -24,10 +25,16 @@ export function Detail() {
   const { addTemplate } = useTemplateStore();
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [showCircularModal, setShowCircularModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const checklist = checklists.find(c => c.id === id);
+
+  useEffect(() => {
+    setCurrentSectionId(checklist?.sections[0]?.id || null);
+  }, [checklist]);
+
   const [currentSectionId, setCurrentSectionId] = useState<string | null>(
     checklist?.sections[0]?.id || null
   );
@@ -51,6 +58,16 @@ export function Detail() {
     if (!checklist) return [];
     return checklist.sections.flatMap(s => s.items);
   }, [checklist]);
+
+  const circularDependencies = useMemo(() => {
+    return detectCircularDependencies(allItems);
+  }, [allItems]);
+
+  useEffect(() => {
+    if (circularDependencies.length > 0) {
+      setShowCircularModal(true);
+    }
+  }, [circularDependencies]);
 
   const handleNotesChange = (itemId: string, notes: string) => {
     if (!checklist || !currentSection) return;
@@ -382,6 +399,45 @@ export function Detail() {
                          transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 循环依赖警告弹窗 */}
+      {showCircularModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-red-600 dark:text-red-400">
+                ⚠️ 检测到循环依赖
+              </h3>
+            </div>
+            
+            <div className="p-5">
+              <p className="text-gray-700 dark:text-gray-300 mb-4">
+                检测到检查项之间存在循环依赖关系，这会导致某些检查项永远无法启用。请检查并修复以下依赖循环：
+              </p>
+              <ul className="space-y-2">
+                {circularDependencies.map((cycle, idx) => (
+                  <li key={idx} className="text-sm text-gray-700 dark:text-gray-300">
+                    {cycle.map(itemId => {
+                      const item = allItems.find(i => i.id === itemId);
+                      return item?.title || itemId;
+                    }).join(' → ')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            <div className="p-5 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowCircularModal(false)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                知道了
               </button>
             </div>
           </div>

@@ -1,19 +1,16 @@
 import type { CheckItem, CheckItemStatus, Section, SectionStatus, Checklist, ChecklistStatus } from '../types';
 
 export const isItemCompleted = (item: CheckItem): boolean => {
-  if (item.status === 'completed' || item.status === 'skipped') return true;
-  return false;
+  return item.status === 'completed';
 };
 
 export const isItemMandatoryAndIncomplete = (item: CheckItem): boolean => {
-  return item.mandatory && item.status !== 'completed' && item.status !== 'skipped';
+  return item.mandatory && item.status !== 'completed';
 };
 
 export const calculateSectionProgress = (section: Section): { completed: number; total: number } => {
   const mandatoryItems = section.items.filter(item => item.mandatory);
-  const completedMandatory = mandatoryItems.filter(item => 
-    item.status === 'completed' || item.status === 'skipped'
-  );
+  const completedMandatory = mandatoryItems.filter(item => item.status === 'completed');
   return {
     completed: completedMandatory.length,
     total: mandatoryItems.length,
@@ -49,37 +46,115 @@ export const calculateChecklistStatus = (checklist: Checklist): ChecklistStatus 
   if (checklist.status === 'submitted') return 'submitted';
   
   const allItems = checklist.sections.flatMap(s => s.items);
+  
+  if (allItems.length === 0) {
+    return checklist.sections.length === 0 ? 'blocked' : 'blocked';
+  }
+  
   const mandatoryItems = allItems.filter(item => item.mandatory);
   
-  const allMandatoryPassed = mandatoryItems.every(
-    item => item.status === 'completed' || item.status === 'skipped'
-  );
+  if (mandatoryItems.length === 0) {
+    const allCompleted = allItems.every(item => item.status === 'completed');
+    if (allCompleted) return 'passed';
+    return 'blocked';
+  }
   
+  const allMandatoryCompleted = mandatoryItems.every(item => item.status === 'completed');
+  const hasSkippedMandatory = mandatoryItems.some(item => item.status === 'skipped');
   const hasNeedsMaterials = allItems.some(item => item.status === 'needs_materials');
   const hasBlockedMandatory = mandatoryItems.some(
     item => item.status === 'not_started' || item.status === 'in_progress'
   );
   
   if (hasBlockedMandatory) return 'blocked';
-  if (hasNeedsMaterials && allMandatoryPassed) return 'conditional';
-  if (allMandatoryPassed) return 'passed';
+  if (hasSkippedMandatory && !allMandatoryCompleted) return 'blocked';
+  if (hasNeedsMaterials && allMandatoryCompleted) return 'conditional';
+  if (allMandatoryCompleted) return 'passed';
   return 'blocked';
 };
 
 export const getIncompleteMandatoryItems = (checklist: Checklist): CheckItem[] => {
   return checklist.sections
     .flatMap(s => s.items)
-    .filter(item => item.mandatory && item.status !== 'completed' && item.status !== 'skipped');
+    .filter(item => item.mandatory && item.status !== 'completed');
 };
 
 export const checkDependenciesMet = (item: CheckItem, allItems: CheckItem[]): boolean => {
   if (item.dependencies.length === 0) return true;
   
+  const visited = new Set<string>();
+  const stack: string[] = [...item.dependencies];
+  
+  while (stack.length > 0) {
+    const depId = stack.pop();
+    if (!depId) continue;
+    
+    if (visited.has(depId)) {
+      if (depId === item.id) {
+        return false;
+      }
+      continue;
+    }
+    visited.add(depId);
+    
+    if (depId === item.id) {
+      return false;
+    }
+    
+    const depItem = allItems.find(i => i.id === depId);
+    if (!depItem) continue;
+    
+    if (depItem.status !== 'completed') {
+      stack.push(...depItem.dependencies);
+    }
+  }
+  
   return item.dependencies.every(depId => {
     const depItem = allItems.find(i => i.id === depId);
     if (!depItem) return true;
-    return depItem.status === 'completed' || depItem.status === 'skipped';
+    return depItem.status === 'completed';
   });
+};
+
+export const detectCircularDependencies = (allItems: CheckItem[]): string[][] => {
+  const cycles: string[][] = [];
+  const visited = new Set<string>();
+  
+  for (const item of allItems) {
+    if (visited.has(item.id)) continue;
+    
+    const path: string[] = [];
+    const pathSet = new Set<string>();
+    
+    const dfs = (currentId: string): boolean => {
+      if (pathSet.has(currentId)) {
+        const cycleStart = path.indexOf(currentId);
+        cycles.push(path.slice(cycleStart));
+        return true;
+      }
+      
+      if (visited.has(currentId)) return false;
+      
+      visited.add(currentId);
+      path.push(currentId);
+      pathSet.add(currentId);
+      
+      const currentItem = allItems.find(i => i.id === currentId);
+      if (currentItem) {
+        for (const depId of currentItem.dependencies) {
+          if (dfs(depId)) return true;
+        }
+      }
+      
+      path.pop();
+      pathSet.delete(currentId);
+      return false;
+    };
+    
+    dfs(item.id);
+  }
+  
+  return cycles;
 };
 
 export const getStatusLabel = (status: CheckItemStatus | SectionStatus | ChecklistStatus): string => {

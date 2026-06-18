@@ -8,17 +8,43 @@ interface AttachmentUploaderProps {
   disabled?: boolean;
 }
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain', 'application/json'];
+
 export function AttachmentUploader({ files, onChange, disabled }: AttachmentUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [error, setError] = useState<string>('');
+
+  const validateFile = (file: File): { valid: boolean; message: string } => {
+    if (file.size > MAX_FILE_SIZE) {
+      return { valid: false, message: `${file.name} 超过大小限制（最大 5MB）` };
+    }
+    if (!ALLOWED_TYPES.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|txt|json)$/i)) {
+      return { valid: false, message: `${file.name} 类型不允许，请上传图片、PDF、文档或表格文件` };
+    }
+    return { valid: true, message: '' };
+  };
 
   const handleFileSelect = (fileList: FileList | null) => {
     if (!fileList) return;
     
+    setError('');
     const newFiles: Attachment[] = [];
     let processed = 0;
+    const totalFiles = fileList.length;
     
     Array.from(fileList).forEach((file) => {
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        setError(prev => prev ? `${prev}\n${validation.message}` : validation.message);
+        processed++;
+        if (processed === totalFiles && newFiles.length > 0) {
+          onChange([...files, ...newFiles]);
+        }
+        return;
+      }
+      
       const reader = new FileReader();
       reader.onload = (e) => {
         newFiles.push({
@@ -30,7 +56,14 @@ export function AttachmentUploader({ files, onChange, disabled }: AttachmentUplo
           uploadedAt: new Date().toISOString(),
         });
         processed++;
-        if (processed === fileList.length) {
+        if (processed === totalFiles) {
+          onChange([...files, ...newFiles]);
+        }
+      };
+      reader.onerror = () => {
+        setError(prev => prev ? `${prev}\n无法读取 ${file.name}` : `无法读取 ${file.name}`);
+        processed++;
+        if (processed === totalFiles && newFiles.length > 0) {
           onChange([...files, ...newFiles]);
         }
       };
@@ -106,7 +139,16 @@ export function AttachmentUploader({ files, onChange, disabled }: AttachmentUplo
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           点击或拖拽文件到此处上传
         </p>
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          支持图片、PDF、文档、表格，单文件最大 5MB
+        </p>
       </div>
+
+      {error && (
+        <div className="p-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm rounded">
+          {error}
+        </div>
+      )}
 
       {files.length > 0 && (
         <ul className="space-y-1">

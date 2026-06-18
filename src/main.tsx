@@ -3,16 +3,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// 初始化深色模式
 const rootElement = document.documentElement;
-if (
+const isDark = 
   localStorage.theme === 'dark' ||
   (!('theme' in localStorage) &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches)
-) {
+    window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+if (isDark) {
   rootElement.classList.add('dark');
-} else {
-  rootElement.classList.remove('dark');
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
