@@ -1,0 +1,23 @@
+尽调检查清单单页应用功能挺全了——5 大类检查项、状态机、必填和依赖、模板保存应用、Markdown 导出、打印、持久化都实现了。但第一轮深挖发现了十几个问题，挑紧要的列出来。
+
+第一个是界面问题，按钮几乎看不见。最新看了下代码，src/index.css 是一份手写的 Tailwind 样式子集，不是真正的 Tailwind 框架。jsx 里写了大量 bg-blue-600、hover:bg-blue-700、ring-2、divide-y 这类类名，但 index.css 里根本没定义它们。结果"新建清单"按钮背景是浏览器默认浅灰，文字是 text-white 的近乎白色，肉眼几乎找不到。package.json 里也没有 tailwindcss/postcss 的依赖。如果继续用手写方案，就补全所有用到的 class；如果切换回真实 Tailwind，就加依赖和 postcss.config。记得保证 npm run build 之后按钮可见。
+
+第二个是打印页面有 XSS 漏洞。export.ts 里打印报告的逻辑是用 marked.parse 把 Markdown 渲染成 HTML 然后拼到 <script> 标签的模板字面量里。模板字面量只转义了反引号（`），没转义 ${}。所以如果某个检查项的标题或者描述写着 `${evil_code}` 或者 `<script>alert(1)</script>`，打印弹窗渲染时就会直接执行。修的话：要么先把内容里的 ${ 转义掉，要么在 marked.parse 之后用 DOMPurify 再洗一遍，或者干脆不要用模板字面量拼 HTML 内容，改用 createTextNode 之类的安全方式。
+
+第三个是必填校验可以被"已跳过"绕过。status.ts 里把 status='skipped' 和 status='completed' 等同计数了。审计人员只要把所有必填项状态设成"已跳过"，进度就显示 100%，就可以提交清单标记为"通过"。这是尽调流程里的关键漏洞：必填项不应该允许跳过，或者至少跳过时要有弹窗确认为什么是跳过、填写理由。
+
+第四个是本地存储损坏后数据直接丢了。localStorage 里的 checklist-store 如果因为某种原因写入坏了——比如手动改坏了、浏览器配额超了、刚好写到一半——Zustand persist 静默回退到初始状态，用户所有清单消失，没有任何提示。应该在 storage 读取失败时弹个提示，最好还能从 indexedDB 或者备份 key 里试着恢复一下。
+
+第五个是循环依赖死锁。A 项目依赖 B，B 依赖 A，那这两项永远处于"需先完成前置依赖项"的灰色状态，既不能操作也不能提交，UI 上也没有提示这是死锁。加个有向图的环检测（DFS + visitedSet 找 back edge），检测到了就在界面上显示"存在循环依赖，请检查"。
+
+第六个是空清单也能"提交通过"。0 个 section 或 0 个强制项的清单，status 直接计算为 'passed' 了。空的清单不应该能提交通过。
+
+第七个是附件没有限制。上传和拖拽文件没有大小限制、没有类型限制、没有数量限制。项目里用 readAsDataURL 转 base64，100MB 的文件直接变大 1.33 倍然后塞 localStorage，超过配额就抛 QuotaExceededError，但没有任何 try/catch 兜住这个错误，用户看到的是静默失败——附加的文件没存上但界面上没报错。
+
+第八个是大量项目时性能不行。清单里如果有 1000 个检查项，直接 map 渲染出一大棵 React 子树，body 内容有 1.88MB。页面可以打开但不流畅，任意修改一个项目触发全量重渲染。可以加上虚拟滚动，或者至少把 section 折叠起来懒加载。
+
+第九个是下载文件名的路径注入风险。export.ts 里下载链接的 download 属性直接拼了清单标题。如果标题是 "../../etc/passwd"，下载的文件名也能带上路径分隔符，虽然浏览器会阻挡目录穿越，但最好还是把非文件名字符替换掉。
+
+第十个是切换清单侧边栏错乱的问题。Detail 组件初始化时跑了一次 setCurrentSectionId(firstSection)，但 React 的 useState 初始化函数只在组件挂载时跑一次。如果从 /checklist/A 直接跳 /checklist/B（A 和 B 的 section ID 不一样），currentSectionId 仍然指向 A 的那个 section，B 加载出来侧边栏是高亮失效的 section。可以用 useEffect 来响应 checklistId 变化重置 section ID。
+
+R2 验收标准：新建按钮肉眼可见且能点；打印页面 HTML/JS 注入不执行；必填项设为跳过时进度不含在内；localStorage 损坏时弹出提示而不是静默丢数据；循环依赖会被检测到并提示用户。
