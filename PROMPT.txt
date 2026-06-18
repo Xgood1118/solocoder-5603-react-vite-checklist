@@ -1,0 +1,25 @@
+做一份投资尽调检查清单的单页应用，技术栈用 React + Vite。基金经理做项目立项前要按这个清单一项一项过，过的过程要留痕。
+
+清单结构：一套清单有多个 section（比如公司基本面、财务、团队、行业、风险），每个 section 下有多个 check item。check item 类型有：布尔（是否通过）、文本（备注说明）、评分（1-5 星）、日期（实际尽调日期）、文件（上传佐证材料——本地存 base64 即可）。
+
+状态机：每个 check item 有自己的状态：未开始、进行中、已完成、已跳过、需补充材料。section 也汇总自己的状态：全完成、全跳过、混合。整份清单的总体状态：阻塞（有关键项未过）、有条件通过（个别项需补充）、通过、已提交。
+
+必选项：check item 标记为 mandatory 的，所有 mandatory 项必须通过或显式跳过才能让清单进入"通过"状态。试图把没填完的清单提交为通过时，给出明确哪些项缺。
+
+顺序约束：某些 check item 之间有依赖关系，必须先做 A 才能做 B（比如先确认公司主体存在才能查工商信息）。依赖项未完成时，依赖项要在 UI 上置灰。
+
+进度：每个 section 显示 x/y 完成度（已完成的 mandatory / 总 mandatory），整份清单显示总进度。
+
+多份清单管理：用户可以建多份清单（不同项目的），列表展示。打开任意一份继续填。清单可以"模板化"——把当前配置（sections 和 check items 结构，不含数据）保存为模板，下次建新清单可以基于模板复制。
+
+导出：把清单导出为 Markdown 报告或者 PDF（用浏览器 print 转 PDF 也行，不用专门的库）。报告里包含所有 check item 的状态、备注、评分、上传的佐证（链接形式）。
+
+历史：用户填过的历史清单要能查看，复用相同的模板可以快速开新清单。
+
+持久化全部用 localStorage，IndexedDB 存文件附件。状态管理用 Zustand。
+
+UI：侧边栏导航（清单列表 + section 切换），主区域显示当前 section 的 check items。深色模式支持，跟着系统偏好走。
+
+依赖：react、react-dom、react-router-dom、zustand、idb-keyval、clsx、date-fns。前端依赖 ≤ 10 个。
+
+代码组织：src/components（SectionList、CheckItem、ProgressBar、AttachmentUploader）、src/stores（清单 store、模板 store）、src/utils（状态计算、进度）、src/types、src/pages（Home/List/Detail/Template）。
